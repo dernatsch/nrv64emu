@@ -101,6 +101,19 @@ pub struct JType {
     pub imm: i32,
 }
 
+impl From<u32> for JType {
+    fn from(instruction: u32) -> Self {
+        let opcode = instruction & 0x7F;
+        let rd = ((instruction >> 7) & 0x1F) as u8;
+
+        Self {
+            opcode: opcode as u8,
+            rd,
+            imm: decode_u_imm(instruction),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum Instruction {
     Auipc(UType),
@@ -139,6 +152,9 @@ pub enum Instruction {
     Divu(RType),
     Rem(RType),
     Remu(RType),
+
+    // Jumps
+    Jal(JType),
 
     Invalid(u32),
 }
@@ -192,6 +208,7 @@ impl Instruction {
                 }
             }
             0x37 => Instruction::Lui(UType::from(instruction)),
+            0x6F => Instruction::Jal(JType::from(instruction)),
             0x73 => {
                 let it = IType::from(instruction);
                 match it.funct3 {
