@@ -1,5 +1,3 @@
-
-
 #[derive(Debug, Copy, Clone)]
 pub struct RType {
     pub opcode: u8,
@@ -32,7 +30,7 @@ impl From<u32> for IType {
             rd,
             funct3,
             rs1,
-            imm
+            imm,
         }
     }
 }
@@ -111,8 +109,6 @@ impl Instruction {
         let opcode = instruction & 0x7F;
 
         match opcode {
-            0x17 => Instruction::Auipc(UType::from(instruction)),
-            0x37 => Instruction::Lui(UType::from(instruction)),
             0x13 => {
                 let it = IType::from(instruction);
                 match it.funct3 {
@@ -126,6 +122,11 @@ impl Instruction {
                     _ => unimplemented!("{:#010X} {:X?}", instruction, it),
                 }
             }
+            0x17 => Instruction::Auipc(UType::from(instruction)),
+            0x33 => {
+                unimplemented!();
+            }
+            0x37 => Instruction::Lui(UType::from(instruction)),
             0x73 => {
                 let it = IType::from(instruction);
                 match it.funct3 {
@@ -133,12 +134,10 @@ impl Instruction {
                     2 => Instruction::Csrrs(it),
                     3 => Instruction::Csrrc(it),
                     _ => unimplemented!("{:#010X} {:X?}", instruction, it),
-
                 }
             }
 
             _ => unimplemented!("{:#010X} opcode={:02X}", instruction, opcode),
         }
     }
-
 }

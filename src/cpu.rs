@@ -9,12 +9,10 @@ const VIRTIO_NET_BASE: u64 = 0x10001000; //XXX: enough distance?
 pub struct Cpu {
     ram_base: u64,
     ram: Vec<u8>, //TODO: bus abstraction
-    
-    
+
     // Interal state
     pc: u64,
     regs: [u64; 32],
-
 }
 
 impl Cpu {
@@ -43,9 +41,7 @@ impl Cpu {
         }
     }
 
-    fn write_csr(&mut self, csr: u32, val: u64) {
-
-    }
+    fn write_csr(&mut self, csr: u32, val: u64) {}
 
     pub fn step(&mut self) {
         debug_assert!(self.regs[0] == 0);
@@ -68,7 +64,7 @@ impl Cpu {
                 self.pc += 4;
             }
             Instruction::Csrrw(i) => {
-                let csrid = i.imm as u32 & 0xfff; 
+                let csrid = i.imm as u32 & 0xfff;
                 let val = self.regs[i.rs1 as usize];
                 let csr = self.read_csr(csrid);
                 self.write_csr(csrid, val);
@@ -76,7 +72,7 @@ impl Cpu {
                 self.pc += 4;
             }
             Instruction::Csrrs(i) => {
-                let csrid = i.imm as u32 & 0xfff; 
+                let csrid = i.imm as u32 & 0xfff;
                 let val = self.regs[i.rs1 as usize];
                 let csr = self.read_csr(csrid);
                 self.write_csr(csrid, val | csr);
@@ -84,7 +80,7 @@ impl Cpu {
                 self.pc += 4;
             }
             Instruction::Csrrc(i) => {
-                let csrid = i.imm as u32 & 0xfff; 
+                let csrid = i.imm as u32 & 0xfff;
                 let val = self.regs[i.rs1 as usize];
                 let csr = self.read_csr(csrid);
                 self.write_csr(csrid, val & !csr);
