@@ -1,3 +1,5 @@
+use std::ops::Mul;
+
 use crate::decoder::Instruction;
 
 const CLINT_BASE: u64 = 0x02000000;
@@ -87,7 +89,25 @@ impl Cpu {
                 self.regs[i.rd as usize] = csr;
                 self.pc += 4;
             }
-            _ => unimplemented!("{:?}", insn),
+            Instruction::Add(r) => {
+                let opa = self.regs[r.rs1 as usize];
+                let opb = self.regs[r.rs2 as usize];
+                self.regs[r.rd as usize] = opa.wrapping_mul(opb);
+                self.pc += 4;
+            }
+            Instruction::Mul(r) => {
+                let opa = self.regs[r.rs1 as usize];
+                let opb = self.regs[r.rs2 as usize];
+                self.regs[r.rd as usize] = opa * opb;
+                self.pc += 4;
+            }
+            Instruction::Mulh(r) => {
+                let opa = self.regs[r.rs1 as usize];
+                let opb = self.regs[r.rs2 as usize];
+                self.regs[r.rd as usize] = ((opa as u128 * opb as u128) >> 64) as u64;
+                self.pc += 4;
+            }
+            _ => unimplemented!("pc={:08X} {:X?}", self.pc, insn),
         }
     }
 

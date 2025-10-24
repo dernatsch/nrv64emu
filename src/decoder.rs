@@ -8,6 +8,27 @@ pub struct RType {
     pub funct7: u8,
 }
 
+impl From<u32> for RType {
+    fn from(instruction: u32) -> Self {
+        let opcode = (instruction & 0x7F) as u8;
+        let rd = ((instruction >> 7) & 0x1F) as u8;
+        let funct3 = ((instruction >> 12) & 0x07) as u8;
+        let rs1 = ((instruction >> 15) & 0x1F) as u8;
+        let rs2 = ((instruction >> 20) & 0x1F) as u8;
+        let funct7 = (instruction >> 25) as u8;
+
+        Self {
+            opcode,
+            rd,
+            funct3,
+            rs1,
+            rs2,
+            funct7,
+        }
+    }
+}
+
+
 #[derive(Debug, Copy, Clone)]
 pub struct IType {
     pub opcode: u8,
@@ -85,6 +106,7 @@ pub enum Instruction {
     Auipc(UType),
     Lui(UType),
 
+    // Immediates
     Addi(IType),
     Slli(IType),
     Slti(IType),
@@ -93,9 +115,30 @@ pub enum Instruction {
     Ori(IType),
     Andi(IType),
 
+    // CSR
     Csrrw(IType),
     Csrrs(IType),
     Csrrc(IType),
+
+    // OP
+    Add(RType),
+    Sub(RType),
+    Sll(RType),
+    Slt(RType),
+    Sltu(RType),
+    Xor(RType),
+    Srl(RType),
+    Sra(RType),
+    Or(RType),
+    And(RType),
+
+    // M
+    Mul(RType),
+    Mulh(RType),
+    Div(RType),
+    Divu(RType),
+    Rem(RType),
+    Remu(RType),
 
     Invalid(u32),
 }
@@ -124,7 +167,29 @@ impl Instruction {
             }
             0x17 => Instruction::Auipc(UType::from(instruction)),
             0x33 => {
-                unimplemented!();
+                let rt = RType::from(instruction);
+
+                match (rt.funct7, rt.funct3) {
+                    (0x00, 0x0) => Instruction::Add(rt),
+                    (0x00, 0x1) => Instruction::Sll(rt),
+                    (0x00, 0x2) => Instruction::Slt(rt),
+                    (0x00, 0x3) => Instruction::Sltu(rt),
+                    (0x00, 0x4) => Instruction::Xor(rt),
+                    (0x00, 0x5) => Instruction::Srl(rt),
+                    (0x00, 0x6) => Instruction::Or(rt),
+                    (0x00, 0x7) => Instruction::And(rt),
+
+                    (0x20, 0x0) => Instruction::Sub(rt),
+                    (0x20, 0x5) => Instruction::Sra(rt),
+
+                    (0x01, 0x0) => Instruction::Mul(rt),
+                    (0x01, 0x1) => Instruction::Mulh(rt),
+                    (0x01, 0x4) => Instruction::Div(rt),
+                    (0x01, 0x5) => Instruction::Divu(rt),
+                    (0x01, 0x6) => Instruction::Rem(rt),
+                    (0x01, 0x7) => Instruction::Remu(rt),
+                    _ => Instruction::Invalid(instruction),
+                }
             }
             0x37 => Instruction::Lui(UType::from(instruction)),
             0x73 => {
