@@ -36,12 +36,61 @@ impl Cpu {
         self.ram[ram_off..][..bytes.len()].copy_from_slice(bytes);
     }
 
+    fn read_csr(&mut self, csr: u32) -> u64 {
+        match csr {
+            0xF14 => 0, // mhartid
+            _ => unimplemented!("csr {:03X} read, cause exception!", csr),
+        }
+    }
+
+    fn write_csr(&mut self, csr: u32, val: u64) {
+
+    }
+
     pub fn step(&mut self) {
         debug_assert!(self.regs[0] == 0);
 
         let insn = self.fetch_and_decode_insn(self.pc);
 
         match insn {
+            Instruction::Auipc(u) => {
+                self.regs[u.rd as usize] = self.pc.wrapping_add(u.imm as u64);
+                self.pc += 4;
+            }
+            Instruction::Lui(u) => {
+                if u.rd != 0 {
+                    self.regs[u.rd as usize] = u.imm as i64 as u64;
+                }
+                self.pc += 4;
+            }
+            Instruction::Addi(i) => {
+                self.regs[i.rd as usize] = self.regs[i.rs1 as usize].wrapping_add(i.imm as u64);
+                self.pc += 4;
+            }
+            Instruction::Csrrw(i) => {
+                let csrid = i.imm as u32 & 0xfff; 
+                let val = self.regs[i.rs1 as usize];
+                let csr = self.read_csr(csrid);
+                self.write_csr(csrid, val);
+                self.regs[i.rd as usize] = csr;
+                self.pc += 4;
+            }
+            Instruction::Csrrs(i) => {
+                let csrid = i.imm as u32 & 0xfff; 
+                let val = self.regs[i.rs1 as usize];
+                let csr = self.read_csr(csrid);
+                self.write_csr(csrid, val | csr);
+                self.regs[i.rd as usize] = csr;
+                self.pc += 4;
+            }
+            Instruction::Csrrc(i) => {
+                let csrid = i.imm as u32 & 0xfff; 
+                let val = self.regs[i.rs1 as usize];
+                let csr = self.read_csr(csrid);
+                self.write_csr(csrid, val & !csr);
+                self.regs[i.rd as usize] = csr;
+                self.pc += 4;
+            }
             _ => unimplemented!("{:?}", insn),
         }
     }
