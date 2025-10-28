@@ -33,6 +33,7 @@ pub struct Cpu {
     mepc: u64,
 
     satp: u64,
+    stimecmp: u64,
 }
 
 impl std::fmt::Debug for Cpu {
@@ -80,6 +81,7 @@ impl Cpu {
             mepc: 0,
 
             satp: 0,
+            stimecmp: 0,
         }
     }
 
@@ -91,6 +93,7 @@ impl Cpu {
     fn read_csr(&mut self, csr: u32) -> u64 {
         match csr {
             0x104 => self.mie & self.mideleg, // sie
+            0x14D => self.stimecmp,
             0x180 => self.satp,
             0x300 => self.mstatus,
             0x301 => self.misa,
@@ -110,11 +113,49 @@ impl Cpu {
         }
     }
 
-    fn write_csr(&mut self, csr: u32, val: u64) {}
+    fn write_csr(&mut self, csr: u32, val: u64) -> bool {
+        match csr {
+            0x104 => {
+                let mask = self.mideleg;
+                self.mie = (val & mask) | (self.mie & !mask);
+            }
+            0x14D => { self.stimecmp = val; }
+            0x180 => { self.satp = val; println!("satp: {:#018X}", self.satp); } //TODO
+            0x300 => { self.mstatus = val; }
+            0x302 => { self.medeleg = val; }
+            0x303 => { self.mideleg = val; }
+            0x304 => { self.mie = val; }
+            0x306 => { self.mcounteren = val; }
+            0x30a => { self.menvcfg = val; }
+            0x341 => { self.mepc = val; }
+            0x3a0..=0x3a3 => { self.pmpcfg[(csr & 0x0f) as usize] = val; }
+            0x3b0..=0x3ff => { self.pmpaddr[(csr & 0x3f) as usize] = val; }
+            _ => unimplemented!("csr {:03X} write, cause exception!", csr),
+        }
+
+        true
+    }
 
     fn store_u8(&mut self, address: u64, value: u8) -> bool { unimplemented!("store_u8") }
     fn store_u16(&mut self, address: u64, value: u16) -> bool { unimplemented!("store_u16") }
-    fn store_u32(&mut self, address: u64, value: u32) -> bool { unimplemented!("store_u32") }
+    fn store_u32(&mut self, address: u64, value: u32) -> bool {
+        // alignment
+        if address % 4 != 0 {
+            return false;
+        }
+
+        // bounds
+        //TODO: handle MMIO
+        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
+            return false;
+        }
+
+        let ram_off = (address - self.ram_base) as usize;
+        self.ram[ram_off..][..4].copy_from_slice(&value.to_le_bytes());
+
+        true
+
+    }
 
     fn store_u64(&mut self, address: u64, value: u64) -> bool{
         // alignment
@@ -134,9 +175,24 @@ impl Cpu {
         true
     }
 
-    fn load_u8(&mut self, address: u64) -> Option<u64> { unimplemented!("load") }
-    fn load_u16(&mut self, address: u64) -> Option<u64> { unimplemented!("load") }
-    fn load_u32(&mut self, address: u64) -> Option<u64> { unimplemented!("load") }
+    fn load_u8(&mut self, address: u64) -> Option<u8> { unimplemented!("load_u8") }
+    fn load_u16(&mut self, address: u64) -> Option<u16> { unimplemented!("load_u16") }
+    fn load_u32(&mut self, address: u64) -> Option<u32> {
+        // alignment
+        if address % 4 != 0 {
+            return None;
+        }
+
+        // bounds
+        //TODO: handle MMIO
+        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
+            return None;
+        }
+
+        let ram_off = (address - self.ram_base) as usize;
+        Some(u32::from_le_bytes(self.ram[ram_off..][..4].try_into().unwrap()))
+
+    }
 
     fn load_u64(&mut self, address: u64) -> Option<u64> {
         // alignment
@@ -156,6 +212,8 @@ impl Cpu {
 
     pub fn step(&mut self) {
         debug_assert!(self.regs[0] == 0);
+
+        println!("{:#010X}", self.pc);
 
         let insn = self.fetch_and_decode_insn(self.pc);
         match insn {
@@ -198,23 +256,33 @@ impl Cpu {
                 let val = self.regs[i.rs1 as usize];
                 let csr = self.read_csr(csrid);
                 self.write_csr(csrid, val);
-                self.regs[i.rd as usize] = csr;
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = csr;
+                }
                 self.pc += 4;
             }
             Instruction::Csrrs(i) => {
                 let csrid = i.imm as u32 & 0xfff;
                 let val = self.regs[i.rs1 as usize];
                 let csr = self.read_csr(csrid);
-                self.write_csr(csrid, val | csr);
-                self.regs[i.rd as usize] = csr;
+                if val != 0 {
+                    self.write_csr(csrid, val | csr);
+                }
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = csr;
+                }
                 self.pc += 4;
             }
             Instruction::Csrrc(i) => {
                 let csrid = i.imm as u32 & 0xfff;
                 let val = self.regs[i.rs1 as usize];
                 let csr = self.read_csr(csrid);
-                self.write_csr(csrid, val & !csr);
-                self.regs[i.rd as usize] = csr;
+                if val != 0 {
+                    self.write_csr(csrid, val & !csr);
+                }
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = csr;
+                }
                 self.pc += 4;
             }
             Instruction::Add(r) => {
@@ -291,9 +359,9 @@ impl Cpu {
             Instruction::Load(i) => {
                 let addr = self.regs[i.rs1 as usize].wrapping_add_signed(i.imm as i64);
                 let val = match i.funct3 {
-                    0 => self.load_u8(addr),
-                    1 => self.load_u16(addr),
-                    2 => self.load_u32(addr),
+                    0 => self.load_u8(addr).map(|x| x as u64),
+                    1 => self.load_u16(addr).map(|x| x as u64),
+                    2 => self.load_u32(addr).map(|x| x as u64),
                     3 => self.load_u64(addr),
                     _ => unimplemented!("pc={:08X} {:X?}", self.pc, insn),
                 };
