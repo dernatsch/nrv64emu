@@ -94,6 +94,25 @@ pub struct BType {
     pub imm: i32,
 }
 
+impl From<u32> for BType {
+    fn from(instruction: u32) -> Self {
+        let opcode = (instruction & 0x7F) as u8;
+        let funct3 = ((instruction >> 12) & 0x07) as u8;
+        let rs1 = ((instruction >> 15) & 0x1F) as u8;
+        let rs2 = ((instruction >> 20) & 0x1F) as u8;
+
+        let imm = decode_b_imm(instruction);
+
+        Self {
+            opcode: opcode as u8,
+            funct3,
+            rs1,
+            rs2,
+            imm
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct UType {
     pub opcode: u8,
@@ -155,6 +174,10 @@ pub enum Instruction {
     Csrrs(IType),
     Csrrc(IType),
 
+    Mret(IType),
+    Sret(IType),
+    Wfi(IType),
+
     // OP
     Add(RType),
     Sub(RType),
@@ -183,6 +206,14 @@ pub enum Instruction {
     Jal(JType),
     Jalr(IType),
 
+    // Branches
+    Beq(BType),
+    Bne(BType),
+    Blt(BType),
+    Bge(BType),
+    Bltu(BType),
+    Bgeu(BType),
+
     Invalid(u32),
 }
 
@@ -197,6 +228,18 @@ fn decode_i_imm(instruction: u32) -> i32 {
         | ((insn >> 20) & 0x7FE)
         | ((insn >> 9) & 0x800)
         | insn & 0xff000
+}
+
+fn decode_b_imm(instruction: u32) -> i32 {
+    let imm_12 = (instruction >> 31) & 1;
+    let imm_11 = (instruction >> 7) & 1;
+    let imm_10_5 = (instruction >> 25) & 0x3F;
+    let imm_4_1 = (instruction >> 8) & 0xF;
+    
+    let immediate = ((imm_12 << 12) | (imm_11 << 11) | (imm_10_5 << 5) | (imm_4_1 << 1)) as i32;
+    
+    // Sign extend
+    immediate << 19 >> 19
 }
 
 impl Instruction {
@@ -256,14 +299,25 @@ impl Instruction {
                 }
             }
             0x37 => Instruction::Lui(UType::from(instruction)),
+            0x63 => {
+                let bt = BType::from(instruction);
+                match bt.funct3 {
+                    0 => Instruction::Beq(bt),
+                    1 => Instruction::Bne(bt),
+                    _ => unimplemented!("{:#010X} {:X?}", instruction, bt),
+                }
+            }
             0x67 => Instruction::Jalr(IType::from(instruction)),
             0x6F => Instruction::Jal(JType::from(instruction)),
             0x73 => {
                 let it = IType::from(instruction);
-                match it.funct3 {
-                    1 => Instruction::Csrrw(it),
-                    2 => Instruction::Csrrs(it),
-                    3 => Instruction::Csrrc(it),
+                match (it.funct3, it.imm) {
+                    (0, 0x102) => Instruction::Sret(it),
+                    (0, 0x105) => Instruction::Wfi(it),
+                    (0, 0x302) => Instruction::Mret(it),
+                    (1, _) => Instruction::Csrrw(it),
+                    (2, _) => Instruction::Csrrs(it),
+                    (3, _) => Instruction::Csrrc(it),
                     _ => unimplemented!("{:#010X} {:X?}", instruction, it),
                 }
             }

@@ -19,6 +19,8 @@ pub struct Cpu {
     pc: u64,
     regs: [u64; 32],
 
+    privl: u8,
+
     pmpcfg: [u64; 4],
     pmpaddr: [u64; 64],
 
@@ -66,6 +68,8 @@ impl Cpu {
 
             pc: 0x80000000,
             regs: [0; 32],
+
+            privl: 3,
 
             pmpcfg: [0; 4],
             pmpaddr: [0; 64],
@@ -371,6 +375,30 @@ impl Cpu {
                     self.pc += 4;
                 } else {
                     unimplemented!("load exception pc={:08X} addr={:#010X?}", self.pc, addr);
+                }
+            }
+            Instruction::Mret(i) => {
+                let mpp = (self.mstatus >> 11) & 3;
+                let mpie = (self.mstatus >> 7) & 1;
+
+                self.mstatus &= !(1 << mpp);
+                self.mstatus |= mpie << mpp;
+
+                // set MPIE
+                self.mstatus |= 1 << 7;
+
+                self.mstatus &= !(3 << 11);
+                self.privl = mpp as u8;
+                self.pc = self.mepc;
+
+            }
+            Instruction::Bne(b) => {
+                let cond = self.regs[b.rs1 as usize] == self.regs[b.rs2 as usize];
+                if cond {
+                    let target = self.pc.wrapping_add_signed(b.imm as i64);
+                    self.pc = target;
+                } else {
+                    self.pc += 4;
                 }
             }
             _ => unimplemented!("pc={:08X} {:X?}", self.pc, insn),
