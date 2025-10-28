@@ -65,6 +65,26 @@ pub struct SType {
     pub imm: i32,
 }
 
+impl From<u32> for SType {
+    fn from(instruction: u32) -> Self {
+        let opcode = (instruction & 0x7F) as u8;
+        let funct3 = ((instruction >> 12) & 0x07) as u8;
+        let rs1 = ((instruction >> 15) & 0x1F) as u8;
+        let rs2 = ((instruction >> 20) & 0x1F) as u8;
+
+        let imm = ((instruction as i32 >> 7) & 0x1F)
+            | (instruction as i32 >> 20) & !0x1F;
+
+        Self {
+            opcode,
+            funct3,
+            rs1,
+            rs2,
+            imm,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct BType {
     pub opcode: u8,
@@ -109,7 +129,7 @@ impl From<u32> for JType {
         Self {
             opcode: opcode as u8,
             rd,
-            imm: decode_u_imm(instruction),
+            imm: decode_i_imm(instruction),
         }
     }
 }
@@ -124,6 +144,8 @@ pub enum Instruction {
     Slli(IType),
     Slti(IType),
     Sltiu(IType),
+    Srai(IType),
+    Srli(IType),
     Xori(IType),
     Ori(IType),
     Andi(IType),
@@ -145,6 +167,10 @@ pub enum Instruction {
     Or(RType),
     And(RType),
 
+    // Load/Store
+    Load(IType),
+    Store(SType),
+
     // M
     Mul(RType),
     Mulh(RType),
@@ -155,6 +181,7 @@ pub enum Instruction {
 
     // Jumps
     Jal(JType),
+    Jalr(IType),
 
     Invalid(u32),
 }
@@ -163,11 +190,21 @@ fn decode_u_imm(instruction: u32) -> i32 {
     (instruction & 0xfffff800) as i32
 }
 
+fn decode_i_imm(instruction: u32) -> i32 {
+    let insn = instruction as i32;
+
+    ((insn & 0x80000000u32 as i32) >> 11)
+        | ((insn >> 20) & 0x7FE)
+        | ((insn >> 9) & 0x800)
+        | insn & 0xff000
+}
+
 impl Instruction {
     pub fn decode(instruction: u32) -> Self {
         let opcode = instruction & 0x7F;
 
         match opcode {
+            0x03 => Instruction::Load(IType::from(instruction)),
             0x13 => {
                 let it = IType::from(instruction);
                 match it.funct3 {
@@ -176,12 +213,23 @@ impl Instruction {
                     2 => Instruction::Slti(it),
                     3 => Instruction::Sltiu(it),
                     4 => Instruction::Xori(it),
+                    5 => {
+                        let imm = it.imm & 0x1F;
+                        let shifttype = it.imm >> 5;
+
+                        if shifttype == 0x20 {
+                            Instruction::Srai(it)
+                        } else {
+                            Instruction::Srli(it)
+                        }
+                    },
                     6 => Instruction::Ori(it),
                     7 => Instruction::Andi(it),
                     _ => unimplemented!("{:#010X} {:X?}", instruction, it),
                 }
             }
             0x17 => Instruction::Auipc(UType::from(instruction)),
+            0x23 => Instruction::Store(SType::from(instruction)),
             0x33 => {
                 let rt = RType::from(instruction);
 
@@ -208,6 +256,7 @@ impl Instruction {
                 }
             }
             0x37 => Instruction::Lui(UType::from(instruction)),
+            0x67 => Instruction::Jalr(IType::from(instruction)),
             0x6F => Instruction::Jal(JType::from(instruction)),
             0x73 => {
                 let it = IType::from(instruction);
