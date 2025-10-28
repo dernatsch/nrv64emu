@@ -329,6 +329,8 @@ impl Instruction {
                     1 => Instruction::Bne(bt),
                     4 => Instruction::Blt(bt),
                     5 => Instruction::Bge(bt),
+                    6 => Instruction::Bltu(bt),
+                    7 => Instruction::Bgeu(bt),
                     _ => unimplemented!("{:#010X} {:X?}", instruction, bt),
                 }
             }

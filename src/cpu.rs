@@ -269,8 +269,9 @@ impl Cpu {
 
     pub fn step(&mut self) {
         debug_assert!(self.regs[0] == 0);
+        debug_assert!(self.pc != 0x80000AEC);
 
-        // println!("{:#010X}", self.pc);
+        println!("{:#010X}", self.pc);
 
         let insn = self.fetch_and_decode_insn(self.pc);
         match insn {
@@ -334,6 +335,22 @@ impl Cpu {
                 let val = self.regs[i.rs1 as usize];
                 if i.rd != 0 {
                     self.regs[i.rd as usize] = if val < i.imm as u64 { 1 } else { 0 };
+                }
+                self.pc += 4;
+            }
+            Instruction::Slt(r) => {
+                let val1 = self.regs[r.rs1 as usize] as i64;
+                let val2 = self.regs[r.rs2 as usize] as i64;
+                if r.rd != 0 {
+                    self.regs[r.rd as usize] = if val1 < val2 { 1 } else { 0 };
+                }
+                self.pc += 4;
+            }
+            Instruction::Sltu(r) => {
+                let val1 = self.regs[r.rs1 as usize];
+                let val2 = self.regs[r.rs2 as usize];
+                if r.rd != 0 {
+                    self.regs[r.rd as usize] = if val1 < val2 { 1 } else { 0 };
                 }
                 self.pc += 4;
             }
@@ -501,7 +518,7 @@ impl Cpu {
                 }
             }
             Instruction::Blt(b) => {
-                let cond = self.regs[b.rs1 as usize] < self.regs[b.rs2 as usize];
+                let cond = (self.regs[b.rs1 as usize] as i64) < self.regs[b.rs2 as usize] as i64;
                 if cond {
                     let target = self.pc.wrapping_add_signed(b.imm as i64);
                     self.pc = target;
@@ -510,6 +527,24 @@ impl Cpu {
                 }
             }
             Instruction::Bge(b) => {
+                let cond = (self.regs[b.rs1 as usize] as i64) >= self.regs[b.rs2 as usize] as i64;
+                if cond {
+                    let target = self.pc.wrapping_add_signed(b.imm as i64);
+                    self.pc = target;
+                } else {
+                    self.pc += 4;
+                }
+            }
+            Instruction::Bltu(b) => {
+                let cond = self.regs[b.rs1 as usize] < self.regs[b.rs2 as usize];
+                if cond {
+                    let target = self.pc.wrapping_add_signed(b.imm as i64);
+                    self.pc = target;
+                } else {
+                    self.pc += 4;
+                }
+            }
+            Instruction::Bgeu(b) => {
                 let cond = self.regs[b.rs1 as usize] >= self.regs[b.rs2 as usize];
                 if cond {
                     let target = self.pc.wrapping_add_signed(b.imm as i64);
