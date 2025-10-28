@@ -169,6 +169,8 @@ pub enum Instruction {
     Ori(IType),
     Andi(IType),
 
+    Addiw(IType),
+
     // CSR
     Csrrw(IType),
     Csrrs(IType),
@@ -214,6 +216,11 @@ pub enum Instruction {
     Bltu(BType),
     Bgeu(BType),
 
+    // A
+    Amoswapw(RType),
+
+    Fence,
+
     Invalid(u32),
 }
 
@@ -248,6 +255,7 @@ impl Instruction {
 
         match opcode {
             0x03 => Instruction::Load(IType::from(instruction)),
+            0x0F => Instruction::Fence,
             0x13 => {
                 let it = IType::from(instruction);
                 match it.funct3 {
@@ -271,8 +279,23 @@ impl Instruction {
                     _ => unimplemented!("{:#010X} {:X?}", instruction, it),
                 }
             }
+            0x1b => {
+                let it = IType::from(instruction);
+                match it.funct3 {
+                    0 => Instruction::Addiw(it),
+                    _ => unimplemented!("{:#010X} {:X?}", instruction, it),
+                }
+            }
             0x17 => Instruction::Auipc(UType::from(instruction)),
             0x23 => Instruction::Store(SType::from(instruction)),
+            0x2F => {
+                let rt = RType::from(instruction);
+                
+                match (rt.funct3, rt.funct7 >> 2) {
+                    (2, 1) => Instruction::Amoswapw(rt),
+                    _ => unimplemented!("{:#010X} {:X?}", instruction, rt),
+                }
+            }
             0x33 => {
                 let rt = RType::from(instruction);
 
@@ -304,6 +327,8 @@ impl Instruction {
                 match bt.funct3 {
                     0 => Instruction::Beq(bt),
                     1 => Instruction::Bne(bt),
+                    4 => Instruction::Blt(bt),
+                    5 => Instruction::Bge(bt),
                     _ => unimplemented!("{:#010X} {:X?}", instruction, bt),
                 }
             }

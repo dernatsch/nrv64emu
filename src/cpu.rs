@@ -3,6 +3,7 @@ use crate::decoder::Instruction;
 const CLINT_BASE: u64 = 0x02000000;
 const PLIC_BASE: u64 = 0x0C000000;
 const UART_BASE: u64 = 0x10000000;
+const UART_SIZE: u64 = 0x100;
 const VIRTIO_DISK_BASE: u64 = 0x10001000;
 const VIRTIO_NET_BASE: u64 = 0x10001000; //XXX: enough distance?
 
@@ -57,10 +58,13 @@ const MISA_RV64G: u64 = (2 << 62) // XLEN=64
     // | (1<<3)    // D
     | 1<<2;   // C
 
+const SSTATUS_MASK: u64 = 0x30000de122;
+
+
 impl Cpu {
     pub fn new() -> Self {
         let mut ram = Vec::new();
-        ram.resize(128 * 1024 * 1024, 0xAA);
+        ram.resize(128 * 1024 * 1024, 0x00);
 
         Cpu {
             ram_base: 0x80000000,
@@ -96,6 +100,7 @@ impl Cpu {
 
     fn read_csr(&mut self, csr: u32) -> u64 {
         match csr {
+            0x100 => self.mstatus & SSTATUS_MASK,
             0x104 => self.mie & self.mideleg, // sie
             0x14D => self.stimecmp,
             0x180 => self.satp,
@@ -119,6 +124,10 @@ impl Cpu {
 
     fn write_csr(&mut self, csr: u32, val: u64) -> bool {
         match csr {
+            0x100 => {
+                self.mstatus &= !SSTATUS_MASK;
+                self.mstatus |= val & SSTATUS_MASK;
+            }
             0x104 => {
                 let mask = self.mideleg;
                 self.mie = (val & mask) | (self.mie & !mask);
@@ -140,7 +149,38 @@ impl Cpu {
         true
     }
 
-    fn store_u8(&mut self, address: u64, value: u8) -> bool { unimplemented!("store_u8") }
+    fn uart_store_u8(&mut self, address: u64, value: u8) -> bool {
+        match address {
+            0 => { print!("{}", value as char); }
+            _ => {}
+        }
+
+        true
+    }
+
+    fn uart_load_u8(&mut self, address: u64) -> Option<u8> {
+        match address {
+            0x05 => Some(0x60),
+            _ => None,
+        }
+    }
+
+    fn store_u8(&mut self, address: u64, value: u8) -> bool {
+        // bounds
+        //TODO: handle MMIO
+        if (UART_BASE..UART_BASE+UART_SIZE).contains(&address) {
+            return self.uart_store_u8(address - UART_BASE, value);
+        }
+
+        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
+            return false;
+        }
+        
+        let ram_off = (address - self.ram_base) as usize;
+        self.ram[ram_off..][..1].copy_from_slice(&value.to_le_bytes());
+
+        true
+    }
     fn store_u16(&mut self, address: u64, value: u16) -> bool { unimplemented!("store_u16") }
     fn store_u32(&mut self, address: u64, value: u32) -> bool {
         // alignment
@@ -179,7 +219,20 @@ impl Cpu {
         true
     }
 
-    fn load_u8(&mut self, address: u64) -> Option<u8> { unimplemented!("load_u8") }
+    fn load_u8(&mut self, address: u64) -> Option<u8> {
+        if (UART_BASE..UART_BASE+UART_SIZE).contains(&address) {
+            return self.uart_load_u8(address - UART_BASE);
+        }
+
+        // bounds
+        //TODO: handle MMIO
+        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
+            return None;
+        }
+
+        let ram_off = (address - self.ram_base) as usize;
+        Some(u8::from_le_bytes(self.ram[ram_off..][..1].try_into().unwrap()))
+    }
     fn load_u16(&mut self, address: u64) -> Option<u16> { unimplemented!("load_u16") }
     fn load_u32(&mut self, address: u64) -> Option<u32> {
         // alignment
@@ -217,7 +270,7 @@ impl Cpu {
     pub fn step(&mut self) {
         debug_assert!(self.regs[0] == 0);
 
-        println!("{:#010X}", self.pc);
+        // println!("{:#010X}", self.pc);
 
         let insn = self.fetch_and_decode_insn(self.pc);
         match insn {
@@ -237,6 +290,21 @@ impl Cpu {
                 }
                 self.pc += 4;
             }
+            Instruction::Addiw(i) => {
+                if i.rd != 0 {
+                    let res = self.regs[i.rs1 as usize].wrapping_add_signed(i.imm as i64) as i64;
+                    self.regs[i.rd as usize] = ((res << 32) >> 32) as u64; //XXX: is there
+                                                                                    // a better
+                                                                                    // way?
+                }
+                self.pc += 4;
+            }
+            Instruction::Andi(i) => {
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = self.regs[i.rs1 as usize] & i.imm as u64;
+                }
+                self.pc += 4;
+            }
             Instruction::Ori(i) => {
                 if i.rd != 0 {
                     self.regs[i.rd as usize] = self.regs[i.rs1 as usize] | i.imm as u64;
@@ -252,6 +320,20 @@ impl Cpu {
             Instruction::Srli(i) => {
                 if i.rd != 0 {
                     self.regs[i.rd as usize] = self.regs[i.rs1 as usize] >> (i.imm as u64 & 0x1F);
+                }
+                self.pc += 4;
+            }
+            Instruction::Slti(i) => {
+                let val = self.regs[i.rs1 as usize] as i64;
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = if val < i.imm as i64 { 1 } else { 0 };
+                }
+                self.pc += 4;
+            }
+            Instruction::Sltiu(i) => {
+                let val = self.regs[i.rs1 as usize];
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = if val < i.imm as u64 { 1 } else { 0 };
                 }
                 self.pc += 4;
             }
@@ -293,6 +375,12 @@ impl Cpu {
                 let opa = self.regs[r.rs1 as usize];
                 let opb = self.regs[r.rs2 as usize];
                 self.regs[r.rd as usize] = opa.wrapping_add(opb);
+                self.pc += 4;
+            }
+            Instruction::Sub(r) => {
+                let opa = self.regs[r.rs1 as usize];
+                let opb = self.regs[r.rs2 as usize];
+                self.regs[r.rd as usize] = opa.wrapping_sub(opb);
                 self.pc += 4;
             }
             Instruction::And(r) => {
@@ -363,15 +451,17 @@ impl Cpu {
             Instruction::Load(i) => {
                 let addr = self.regs[i.rs1 as usize].wrapping_add_signed(i.imm as i64);
                 let val = match i.funct3 {
-                    0 => self.load_u8(addr).map(|x| x as u64),
-                    1 => self.load_u16(addr).map(|x| x as u64),
-                    2 => self.load_u32(addr).map(|x| x as u64),
-                    3 => self.load_u64(addr),
+                    0 => self.load_u8(addr).map(|x| x as i8 as i64),
+                    1 => self.load_u16(addr).map(|x| x as i8 as i64),
+                    2 => self.load_u32(addr).map(|x| x as i8 as i64),
+                    3 => self.load_u64(addr).map(|x| x as i64),
+                    4 => self.load_u8(addr).map(|x| x as i64),
+                    5 => self.load_u16(addr).map(|x| x as i64),
                     _ => unimplemented!("pc={:08X} {:X?}", self.pc, insn),
                 };
 
                 if let Some(val) = val {
-                    self.regs[i.rd as usize] = val;
+                    self.regs[i.rd as usize] = val as u64;
                     self.pc += 4;
                 } else {
                     unimplemented!("load exception pc={:08X} addr={:#010X?}", self.pc, addr);
@@ -392,7 +482,7 @@ impl Cpu {
                 self.pc = self.mepc;
 
             }
-            Instruction::Bne(b) => {
+            Instruction::Beq(b) => {
                 let cond = self.regs[b.rs1 as usize] == self.regs[b.rs2 as usize];
                 if cond {
                     let target = self.pc.wrapping_add_signed(b.imm as i64);
@@ -400,6 +490,49 @@ impl Cpu {
                 } else {
                     self.pc += 4;
                 }
+            }
+            Instruction::Bne(b) => {
+                let cond = self.regs[b.rs1 as usize] != self.regs[b.rs2 as usize];
+                if cond {
+                    let target = self.pc.wrapping_add_signed(b.imm as i64);
+                    self.pc = target;
+                } else {
+                    self.pc += 4;
+                }
+            }
+            Instruction::Blt(b) => {
+                let cond = self.regs[b.rs1 as usize] < self.regs[b.rs2 as usize];
+                if cond {
+                    let target = self.pc.wrapping_add_signed(b.imm as i64);
+                    self.pc = target;
+                } else {
+                    self.pc += 4;
+                }
+            }
+            Instruction::Bge(b) => {
+                let cond = self.regs[b.rs1 as usize] >= self.regs[b.rs2 as usize];
+                if cond {
+                    let target = self.pc.wrapping_add_signed(b.imm as i64);
+                    self.pc = target;
+                } else {
+                    self.pc += 4;
+                }
+            }
+            Instruction::Amoswapw(r) => {
+                let addr = self.regs[r.rs1 as usize];
+                let val = self.regs[r.rs2 as usize];
+                let memval = self.load_u32(addr).unwrap_or_else(|| unimplemented!("load exception pc={:08X} addr={:#010X?}", self.pc, addr));
+                if !self.store_u32(addr, val as u32) {
+                        unimplemented!("store exception pc={:08X} addr={:#010X?}", self.pc, addr);
+                }
+
+                if r.rd != 0 {
+                    self.regs[r.rd as usize] = ((memval as i64) << 32 >> 32) as u64;
+                }
+                self.pc += 4;
+            }
+            Instruction::Fence => {
+                self.pc += 4;
             }
             _ => unimplemented!("pc={:08X} {:X?}", self.pc, insn),
         }
