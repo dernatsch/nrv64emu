@@ -35,11 +35,18 @@ impl GdbConnection {
         }
 
         if let Some((start, end)) = Self::find_packet_end(&self.buffer) {
+            if end-start == 1 && self.buffer[start] == b'\x03' {
+                self.buffer.drain(..end);
+                return Ok(Some(String::from("\x03")));
+            }
+
             let s = String::from_utf8_lossy(&self.buffer[start..end]).to_string();
             self.buffer.drain(..end);
 
             if let Some(content_end) = s.find('#') {
-                return Ok(Some(String::from(&s[1..content_end])));
+                let content = String::from(&s[1..content_end]);
+                println!("gdb -> {:?}", content);
+                return Ok(Some(content));
             }
         }
 
@@ -51,6 +58,7 @@ impl GdbConnection {
 
         for (i, &b) in buf.iter().enumerate() {
             match (b, start) {
+                (b'\x03', None) => { return Some((i, i+1)); }
                 (b'$', None) => start = Some(i),
                 (b'#', Some(s)) if i+2 < buf.len() => {
                     return Some((s, i+3));
@@ -68,7 +76,7 @@ impl GdbConnection {
         self.client.write_all(packet.as_bytes())?;
         self.client.flush()?;
 
-        println!("gdb <- {}", data);
+        println!("gdb <- {:?}", data);
 
         Ok(())
     }

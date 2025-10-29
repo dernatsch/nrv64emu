@@ -13,7 +13,6 @@ fn main() {
     let dtb_bin = std::fs::read("./configs/virt.dtb").unwrap();
 
     let mut running = false;
-    let mut last_reason = cpu::HaltReason::Halt;
     let mut cpu = cpu::Cpu::new();
     cpu.store_bytes(0x80000000, &kernel_bin);
 
@@ -41,7 +40,7 @@ fn main() {
     loop {
         if let Some(packet) = debugger.read_packet().unwrap() {
             debugger.ack().unwrap();
-            println!("{:?}", packet);
+
             if packet.starts_with("qSupported") {
                 debugger.send_packet("PacketSize=4000").unwrap();
             } else if packet.starts_with("qAttached") {
@@ -50,11 +49,21 @@ fn main() {
                 debugger.send_packet("S05").unwrap();
             } else if packet.starts_with("qfThreadInfo") {
                 debugger.send_packet("1").unwrap();
+            } else if packet.starts_with("vCont?") {
+                debugger.send_packet("vCont;c;s").unwrap();
             } else if packet.starts_with("qC") {
                 debugger.send_packet("1").unwrap();
             } else if packet.starts_with("g") {
                 let regs = cpu.debug_register_dump();
                 debugger.send_packet(&hex::encode(regs)).unwrap();
+            } else if packet.starts_with("s") {
+                cpu.run(1);
+                debugger.send_packet("S05").unwrap();
+            } else if packet.starts_with("\x03") {
+                running = false;
+                debugger.send_packet("S05").unwrap();
+            } else if packet.starts_with("c") {
+                running = true;
             } else if packet.starts_with("p") {
                 //TODO
                 let idx = u8::from_str_radix(&packet[1..], 16).unwrap();
@@ -70,6 +79,18 @@ fn main() {
                 } else {
                     debugger.send_packet("").unwrap();
                 }
+            } else if packet.starts_with("M") {
+                let (addrlen, data) = packet[1..].split_once(":").unwrap();
+                let (addr, len) = addrlen.split_once(",").unwrap();
+                let addr = u64::from_str_radix(addr, 16).unwrap();
+                let _len = usize::from_str_radix(len, 16).unwrap();
+                let data = hex::decode(data).unwrap();
+
+                if cpu.debug_write_mem(addr, &data) {
+                    debugger.send_packet("OK").unwrap();
+                } else {
+                    debugger.send_packet("E00").unwrap();
+                }
             } else {
                 debugger.send_packet("").unwrap();
             }
@@ -79,8 +100,8 @@ fn main() {
             match cpu.run(10000) {
                 cpu::HaltReason::Steps => {}
                 x => {
-                    last_reason = x;
                     running = false;
+                    debugger.send_packet("S05").unwrap();
                 }
             }
         }

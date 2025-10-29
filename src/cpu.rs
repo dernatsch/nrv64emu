@@ -64,6 +64,17 @@ const MISA_RV64G: u64 = (2 << 62) // XLEN=64
     | (1<<3);    // D
     // | 1<<2;   // C
 
+
+const MISA_RV64GC: u64 = (2 << 62) // XLEN=64
+    | (1<<18)   // S
+    | (1<<20)   // U
+    | (1<<8)    // I
+    | (1<<12)   // M
+    | (1<<0)    // A
+    | (1<<5)    // F
+    | (1<<3)    // D
+    | 1<<2;   // C
+
 const SSTATUS_MASK: u64 = 0x30000de122;
 
 
@@ -85,7 +96,7 @@ impl Cpu {
             pmpaddr: [0; 64],
 
             mstatus: 0,
-            misa: 0,
+            misa: MISA_RV64G,
             medeleg: 0,
             mideleg: 0,
             mie: 0,
@@ -126,7 +137,11 @@ impl Cpu {
     }
 
     pub fn debug_read_reg(&self, idx: usize) -> u64 {
-        0
+        self.regs[idx]
+    }
+
+    pub fn debug_write_mem(&mut self, addr: u64, data: &[u8]) -> bool {
+        self.store_bytes(addr, data)
     }
 
     pub fn debug_read_mem(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
