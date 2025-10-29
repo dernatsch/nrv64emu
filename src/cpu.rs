@@ -1,5 +1,11 @@
 use crate::{decoder::Instruction, mem::Memory};
 
+pub enum HaltReason {
+    Halt,
+    Steps,
+    Breakpoint(u64),
+}
+
 const CLINT_BASE: u64 = 0x02000000;
 const PLIC_BASE: u64 = 0x0C000000;
 const UART_BASE: u64 = 0x10000000;
@@ -100,6 +106,32 @@ impl Cpu {
             Some(slice) => { slice.copy_from_slice(bytes);  true }
             None => false,
         }
+    }
+
+    pub fn debug_register_dump(&self) -> Vec<u8> {
+        let mut dump = Vec::new();
+
+        for x in self.regs.iter() {
+            dump.extend_from_slice(&x.to_le_bytes());
+        }
+
+        dump.extend_from_slice(&self.pc.to_le_bytes());
+
+        //TODO floating point regs
+        for _ in 0..32 {
+            dump.extend_from_slice(&0u64.to_le_bytes());
+        }
+
+        dump
+    }
+
+    pub fn debug_read_reg(&self, idx: usize) -> u64 {
+        0
+    }
+
+    pub fn debug_read_mem(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
+        //TODO: mmio
+        Some(self.ram.get_slice(addr, len)?.into())
     }
 
     fn read_csr(&mut self, csr: u32) -> u64 {
@@ -232,9 +264,8 @@ impl Cpu {
 
     pub fn step(&mut self) {
         debug_assert!(self.regs[0] == 0);
-        debug_assert!(self.pc != 0x80000AEC);
 
-        println!("{:#010X}", self.pc);
+        // println!("{:#010X}", self.pc);
 
         let insn = self.fetch_and_decode_insn(self.pc).unwrap();
         match insn {
@@ -582,5 +613,13 @@ impl Cpu {
     fn fetch_and_decode_insn(&mut self, address: u64) -> Option<Instruction> {
         let instruction = self.load_u32(address)?;
         Some(Instruction::decode(instruction))
+    }
+
+    pub fn run(&mut self, maxsteps: usize) -> HaltReason {
+        for _ in 0..maxsteps {
+            self.step();
+        }
+
+        HaltReason::Steps
     }
 }
