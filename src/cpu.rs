@@ -112,7 +112,7 @@ impl Cpu {
     }
 
     pub fn store_bytes(&mut self, offset: u64, bytes: &[u8]) -> bool {
-        println!("store @ {:#X}..{:#X}", offset, offset as usize+bytes.len());
+        // println!("store @ {:#X}..{:#X}", offset, offset as usize+bytes.len());
         match self.ram.get_slice_mut(offset, bytes.len()) {
             Some(slice) => { slice.copy_from_slice(bytes);  true }
             None => false,
@@ -301,7 +301,7 @@ impl Cpu {
                 self.pc += 4;
             }
             Instruction::Addiw(i) => {
-                let res = self.regs[i.rs1 as usize].wrapping_add_signed(i.imm as i64) as i64;
+                let res = (self.regs[i.rs1 as usize] as u32).wrapping_add_signed(i.imm as i32) as i64;
                 if i.rd != 0 {
                     self.regs[i.rd as usize] = ((res << 32) >> 32) as u64;
                 }
@@ -622,7 +622,6 @@ impl Cpu {
                 self.pc += 4;
             }
             Instruction::Ebreak => {
-                self.pc += 4;
                 return Some(HaltReason::Breakpoint(self.pc));
             }
             _ => unimplemented!("pc={:08X} {:X?}", self.pc, insn),

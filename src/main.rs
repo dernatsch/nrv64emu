@@ -37,6 +37,8 @@ fn main() {
 
     cpu.store_bytes(0x1000, &trampoline);
 
+    cpu.run(6875);
+
     loop {
         if let Some(packet) = debugger.read_packet().unwrap() {
             debugger.ack().unwrap();
