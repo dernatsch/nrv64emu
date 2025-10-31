@@ -170,11 +170,15 @@ pub enum Instruction {
     Andi(IType),
 
     Addiw(IType),
+    Slliw(IType),
+    Srliw(IType),
+    Addw(RType),
 
     // CSR
     Csrrw(IType),
     Csrrs(IType),
     Csrrc(IType),
+    Csrrwi(IType),
 
     Mret(IType),
     Sret(IType),
@@ -286,6 +290,8 @@ impl Instruction {
                 let it = IType::from(instruction);
                 match it.funct3 {
                     0 => Instruction::Addiw(it),
+                    1 => Instruction::Slliw(it),
+                    5 => Instruction::Srliw(it),
                     _ => unimplemented!("{:#010X} {:X?}", instruction, it),
                 }
             }
@@ -325,6 +331,13 @@ impl Instruction {
                 }
             }
             0x37 => Instruction::Lui(UType::from(instruction)),
+            0x3B => {
+                let rt = RType::from(instruction);
+                match (rt.funct3, rt.funct7) {
+                    (0x0, 0x00) => Instruction::Addw(rt),
+                    _ => unimplemented!("{:#010X} {:X?}", instruction, rt),
+                }
+            }
             0x63 => {
                 let bt = BType::from(instruction);
                 match bt.funct3 {
@@ -350,6 +363,7 @@ impl Instruction {
                     (1, _) => Instruction::Csrrw(it),
                     (2, _) => Instruction::Csrrs(it),
                     (3, _) => Instruction::Csrrc(it),
+                    (5, _) => Instruction::Csrrwi(it),
                     _ => unimplemented!("{:#010X} {:X?}", instruction, it),
                 }
             }

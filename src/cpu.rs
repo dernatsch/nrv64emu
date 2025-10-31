@@ -32,6 +32,7 @@ pub struct Cpu {
     mtvec: u64,
     mcounteren: u64,
     menvcfg: u64,
+    mscratch: u64,
     mepc: u64,
 
     satp: u64,
@@ -69,7 +70,7 @@ impl Cpu {
         Cpu {
             ram: ram,
 
-            pc: 0x80000000,
+            pc: 0x1000, // trampoline is here
             regs: [0; 32],
 
             privl: 3,
@@ -85,6 +86,7 @@ impl Cpu {
             mtvec: 0,
             mcounteren: 0,
             menvcfg: 0,
+            mscratch: 0,
             mepc: 0,
 
             satp: 0,
@@ -116,6 +118,7 @@ impl Cpu {
             0x3a0..=0x3a3 => self.pmpcfg[(csr & 0x0f) as usize],
 
             0x3b0..=0x3ff => self.pmpaddr[(csr & 0x3f) as usize],
+            0x340 => self.mscratch,
             0x341 => self.mepc,
             0xC01 => rtc_time(),
             0xF14 => 0, // mhartid
@@ -142,6 +145,7 @@ impl Cpu {
             0x305 => { self.mtvec = val; }
             0x306 => { self.mcounteren = val; }
             0x30a => { self.menvcfg = val; }
+            0x340 => { self.mscratch = val; }
             0x341 => { self.mepc = val; }
             0x3a0..=0x3a3 => { self.pmpcfg[(csr & 0x0f) as usize] = val; }
             0x3b0..=0x3ff => { self.pmpaddr[(csr & 0x3f) as usize] = val; }
@@ -250,11 +254,32 @@ impl Cpu {
                 self.pc += 4;
             }
             Instruction::Addiw(i) => {
+                let res = self.regs[i.rs1 as usize].wrapping_add_signed(i.imm as i64) as i64;
                 if i.rd != 0 {
-                    let res = self.regs[i.rs1 as usize].wrapping_add_signed(i.imm as i64) as i64;
-                    self.regs[i.rd as usize] = ((res << 32) >> 32) as u64; //XXX: is there
-                                                                                    // a better
-                                                                                    // way?
+                    self.regs[i.rd as usize] = ((res << 32) >> 32) as u64;
+                }
+                self.pc += 4;
+            }
+            Instruction::Slliw(i) => {
+                let res = self.regs[i.rs1 as usize] << (i.imm & 0x1F) as i64;
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = ((res << 32) >> 32) as u64;
+                }
+                self.pc += 4;
+            }
+            Instruction::Srliw(i) => {
+                let res = self.regs[i.rs1 as usize] >> (i.imm & 0x1F) as i64;
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = ((res << 32) >> 32) as u64;
+                }
+                self.pc += 4;
+            }
+            Instruction::Addw(r) => {
+                let opa = self.regs[r.rs1 as usize] as i32;
+                let opb = self.regs[r.rs2 as usize] as i32;
+                let res = opa.wrapping_add(opb) as i64;
+                if r.rd != 0 {
+                    self.regs[r.rd as usize] = ((res << 32) >> 32) as u64;
                 }
                 self.pc += 4;
             }
@@ -267,6 +292,12 @@ impl Cpu {
             Instruction::Ori(i) => {
                 if i.rd != 0 {
                     self.regs[i.rd as usize] = self.regs[i.rs1 as usize] | i.imm as u64;
+                }
+                self.pc += 4;
+            }
+            Instruction::Xori(i) => {
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = self.regs[i.rs1 as usize] ^ i.imm as u64;
                 }
                 self.pc += 4;
             }
@@ -317,6 +348,16 @@ impl Cpu {
                 let val = self.regs[i.rs1 as usize];
                 let csr = self.read_csr(csrid);
                 self.write_csr(csrid, val);
+                if i.rd != 0 {
+                    self.regs[i.rd as usize] = csr;
+                }
+                self.pc += 4;
+            }
+            Instruction::Csrrwi(i) => {
+                let csrid = i.imm as u32 & 0xfff;
+                let imm = i.rs1 as u64;
+                let csr = self.read_csr(csrid);
+                self.write_csr(csrid, imm);
                 if i.rd != 0 {
                     self.regs[i.rd as usize] = csr;
                 }
