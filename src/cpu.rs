@@ -277,7 +277,7 @@ impl Cpu {
         Some(u64::from_le_bytes(slice.try_into().unwrap()))
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> Option<HaltReason> {
         debug_assert!(self.regs[0] == 0);
 
         // println!("{:#010X}", self.pc);
@@ -621,8 +621,14 @@ impl Cpu {
             Instruction::Fence => {
                 self.pc += 4;
             }
+            Instruction::Ebreak => {
+                self.pc += 4;
+                return Some(HaltReason::Breakpoint(self.pc));
+            }
             _ => unimplemented!("pc={:08X} {:X?}", self.pc, insn),
         }
+
+        None
     }
 
     fn fetch_and_decode_insn(&mut self, address: u64) -> Option<Instruction> {
@@ -632,7 +638,9 @@ impl Cpu {
 
     pub fn run(&mut self, maxsteps: usize) -> HaltReason {
         for _ in 0..maxsteps {
-            self.step();
+            if let Some(hr) = self.step() {
+                return hr;
+            }
         }
 
         HaltReason::Steps

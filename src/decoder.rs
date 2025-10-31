@@ -232,7 +232,7 @@ pub enum Instruction {
 }
 
 fn decode_u_imm(instruction: u32) -> i32 {
-    (instruction & 0xfffff800) as i32
+    (instruction & 0xfffff000) as i32
 }
 
 fn decode_i_imm(instruction: u32) -> i32 {

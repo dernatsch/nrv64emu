@@ -45,7 +45,7 @@ impl GdbConnection {
 
             if let Some(content_end) = s.find('#') {
                 let content = String::from(&s[1..content_end]);
-                println!("gdb -> {:?}", content);
+                // println!("gdb -> {:?}", content);
                 return Ok(Some(content));
             }
         }
@@ -76,7 +76,7 @@ impl GdbConnection {
         self.client.write_all(packet.as_bytes())?;
         self.client.flush()?;
 
-        println!("gdb <- {:?}", data);
+        // println!("gdb <- {:?}", data);
 
         Ok(())
     }
