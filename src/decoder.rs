@@ -196,6 +196,9 @@ pub enum Instruction {
     Load(IType),
     Store(SType),
 
+    Ebreak,
+    Ecall,
+
     // M
     Mul(RType),
     Mulh(RType),
@@ -339,6 +342,8 @@ impl Instruction {
             0x73 => {
                 let it = IType::from(instruction);
                 match (it.funct3, it.imm) {
+                    (0, 0x000) => Instruction::Ecall,
+                    (0, 0x001) => Instruction::Ebreak,
                     (0, 0x102) => Instruction::Sret(it),
                     (0, 0x105) => Instruction::Wfi(it),
                     (0, 0x302) => Instruction::Mret(it),
