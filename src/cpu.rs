@@ -1,4 +1,4 @@
-use crate::decoder::Instruction;
+use crate::{decoder::Instruction, mem::Memory};
 
 const CLINT_BASE: u64 = 0x02000000;
 const PLIC_BASE: u64 = 0x0C000000;
@@ -13,8 +13,7 @@ fn rtc_time() -> u64 {
 }
 
 pub struct Cpu {
-    ram_base: u64,
-    ram: Vec<u8>, //TODO: bus abstraction
+    ram: Memory,
 
     // Interal state
     pc: u64,
@@ -54,20 +53,20 @@ const MISA_RV64G: u64 = (2 << 62) // XLEN=64
     | (1<<8)    // I
     | (1<<12)   // M
     | (1<<0)    // A
-    // | (1<<5)    // F
-    // | (1<<3)    // D
-    | 1<<2;   // C
+    | (1<<5)    // F
+    | (1<<3);    // D
+    // | 1<<2;   // C
 
 const SSTATUS_MASK: u64 = 0x30000de122;
 
 
 impl Cpu {
     pub fn new() -> Self {
-        let mut ram = Vec::new();
-        ram.resize(128 * 1024 * 1024, 0x00);
+        let mut ram = Memory::new();
+        ram.add_region(0x80000000, 128 * 1024 * 1024);
+        ram.add_region(0x1000, 0x10000-0x1000);
 
         Cpu {
-            ram_base: 0x80000000,
             ram: ram,
 
             pc: 0x80000000,
@@ -93,9 +92,11 @@ impl Cpu {
         }
     }
 
-    pub fn load_bytes(&mut self, offset: u64, bytes: &[u8]) {
-        let ram_off = (offset - self.ram_base) as usize;
-        self.ram[ram_off..][..bytes.len()].copy_from_slice(bytes);
+    pub fn store_bytes(&mut self, offset: u64, bytes: &[u8]) -> bool {
+        match self.ram.get_slice_mut(offset, bytes.len()) {
+            Some(slice) => { slice.copy_from_slice(bytes);  true }
+            None => false,
+        }
     }
 
     fn read_csr(&mut self, csr: u32) -> u64 {
@@ -173,14 +174,7 @@ impl Cpu {
             return self.uart_store_u8(address - UART_BASE, value);
         }
 
-        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
-            return false;
-        }
-        
-        let ram_off = (address - self.ram_base) as usize;
-        self.ram[ram_off..][..1].copy_from_slice(&value.to_le_bytes());
-
-        true
+        self.store_bytes(address, &value.to_le_bytes())
     }
     fn store_u16(&mut self, address: u64, value: u16) -> bool { unimplemented!("store_u16") }
     fn store_u32(&mut self, address: u64, value: u32) -> bool {
@@ -189,17 +183,7 @@ impl Cpu {
             return false;
         }
 
-        // bounds
-        //TODO: handle MMIO
-        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
-            return false;
-        }
-
-        let ram_off = (address - self.ram_base) as usize;
-        self.ram[ram_off..][..4].copy_from_slice(&value.to_le_bytes());
-
-        true
-
+        self.store_bytes(address, &value.to_le_bytes())
     }
 
     fn store_u64(&mut self, address: u64, value: u64) -> bool{
@@ -208,16 +192,7 @@ impl Cpu {
             return false;
         }
 
-        // bounds
-        //TODO: handle MMIO
-        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
-            return false;
-        }
-
-        let ram_off = (address - self.ram_base) as usize;
-        self.ram[ram_off..][..8].copy_from_slice(&value.to_le_bytes());
-
-        true
+        self.store_bytes(address, &value.to_le_bytes())
     }
 
     fn load_u8(&mut self, address: u64) -> Option<u8> {
@@ -225,14 +200,9 @@ impl Cpu {
             return self.uart_load_u8(address - UART_BASE);
         }
 
-        // bounds
-        //TODO: handle MMIO
-        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
-            return None;
-        }
+        let slice = self.ram.get_slice(address, 1)?;
 
-        let ram_off = (address - self.ram_base) as usize;
-        Some(u8::from_le_bytes(self.ram[ram_off..][..1].try_into().unwrap()))
+        Some(u8::from_le_bytes(slice.try_into().unwrap()))
     }
     fn load_u16(&mut self, address: u64) -> Option<u16> { unimplemented!("load_u16") }
     fn load_u32(&mut self, address: u64) -> Option<u32> {
@@ -241,15 +211,8 @@ impl Cpu {
             return None;
         }
 
-        // bounds
-        //TODO: handle MMIO
-        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
-            return None;
-        }
-
-        let ram_off = (address - self.ram_base) as usize;
-        Some(u32::from_le_bytes(self.ram[ram_off..][..4].try_into().unwrap()))
-
+        let slice = self.ram.get_slice(address, 4)?;
+        Some(u32::from_le_bytes(slice.try_into().unwrap()))
     }
 
     fn load_u64(&mut self, address: u64) -> Option<u64> {
@@ -258,14 +221,8 @@ impl Cpu {
             return None;
         }
 
-        // bounds
-        //TODO: handle MMIO
-        if address < self.ram_base || address >= (self.ram_base + self.ram.len() as u64) {
-            return None;
-        }
-
-        let ram_off = (address - self.ram_base) as usize;
-        Some(u64::from_le_bytes(self.ram[ram_off..][..8].try_into().unwrap()))
+        let slice = self.ram.get_slice(address, 8)?;
+        Some(u64::from_le_bytes(slice.try_into().unwrap()))
     }
 
     pub fn step(&mut self) {
@@ -274,7 +231,7 @@ impl Cpu {
 
         println!("{:#010X}", self.pc);
 
-        let insn = self.fetch_and_decode_insn(self.pc);
+        let insn = self.fetch_and_decode_insn(self.pc).unwrap();
         match insn {
             Instruction::Auipc(u) => {
                 self.regs[u.rd as usize] = self.pc.wrapping_add(u.imm as u64);
@@ -580,12 +537,8 @@ impl Cpu {
         }
     }
 
-    fn fetch_and_decode_insn(&self, address: u64) -> Instruction {
-        let ram_off = (address - self.ram_base) as usize;
-        let bytes = &self.ram[ram_off..][..4];
-
-        let instruction = u32::from_le_bytes(bytes.try_into().unwrap());
-
-        Instruction::decode(instruction)
+    fn fetch_and_decode_insn(&mut self, address: u64) -> Option<Instruction> {
+        let instruction = self.load_u32(address)?;
+        Some(Instruction::decode(instruction))
     }
 }
