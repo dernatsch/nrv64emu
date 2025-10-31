@@ -138,6 +138,7 @@ impl Cpu {
             0x302 => { self.medeleg = val; }
             0x303 => { self.mideleg = val; }
             0x304 => { self.mie = val; }
+            0x305 => { self.mtvec = val; }
             0x306 => { self.mcounteren = val; }
             0x30a => { self.menvcfg = val; }
             0x341 => { self.mepc = val; }
@@ -428,6 +429,12 @@ impl Cpu {
                 let opa = self.regs[r.rs1 as usize];
                 let opb = self.regs[r.rs2 as usize];
                 self.regs[r.rd as usize] = ((opa as u128 * opb as u128) >> 64) as u64;
+                self.pc += 4;
+            }
+            Instruction::Sll(r) => {
+                let opa = self.regs[r.rs1 as usize];
+                let opb = self.regs[r.rs2 as usize] & 0x1F;
+                self.regs[r.rd as usize] = opa << opb;
                 self.pc += 4;
             }
             Instruction::Jal(j) => {
