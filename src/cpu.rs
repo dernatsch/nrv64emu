@@ -95,6 +95,7 @@ impl Cpu {
     }
 
     pub fn store_bytes(&mut self, offset: u64, bytes: &[u8]) -> bool {
+        println!("store @ {:#X}..{:#X}", offset, offset as usize+bytes.len());
         match self.ram.get_slice_mut(offset, bytes.len()) {
             Some(slice) => { slice.copy_from_slice(bytes);  true }
             None => false,
