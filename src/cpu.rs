@@ -524,8 +524,8 @@ impl Cpu {
                 let addr = self.regs[i.rs1 as usize].wrapping_add_signed(i.imm as i64);
                 let val = match i.funct3 {
                     0 => self.load_u8(addr).map(|x| x as i8 as i64),
-                    1 => self.load_u16(addr).map(|x| x as i8 as i64),
-                    2 => self.load_u32(addr).map(|x| x as i8 as i64),
+                    1 => self.load_u16(addr).map(|x| x as i16 as i64),
+                    2 => self.load_u32(addr).map(|x| x as i32 as i64),
                     3 => self.load_u64(addr).map(|x| x as i64),
                     4 => self.load_u8(addr).map(|x| x as i64),
                     5 => self.load_u16(addr).map(|x| x as i64),
