@@ -309,15 +309,17 @@ impl Cpu {
             }
             Instruction::Slliw(i) => {
                 let res = self.regs[i.rs1 as usize] << (i.imm & 0x1F) as i64;
+                let res = ((res << 32) >> 32) as u64;
                 if i.rd != 0 {
-                    self.regs[i.rd as usize] = ((res << 32) >> 32) as u64;
+                    self.regs[i.rd as usize] = res;
                 }
                 self.pc += 4;
             }
             Instruction::Srliw(i) => {
                 let res = self.regs[i.rs1 as usize] >> (i.imm & 0x1F) as i64;
+                let res = ((res << 32) >> 32) as u64;
                 if i.rd != 0 {
-                    self.regs[i.rd as usize] = ((res << 32) >> 32) as u64;
+                    self.regs[i.rd as usize] = res;
                 }
                 self.pc += 4;
             }
@@ -349,14 +351,15 @@ impl Cpu {
                 self.pc += 4;
             }
             Instruction::Slli(i) => {
+                let res = self.regs[i.rs1 as usize] << (i.imm as u64 & 0x3F);
                 if i.rd != 0 {
-                    self.regs[i.rd as usize] = self.regs[i.rs1 as usize] << (i.imm as u64 & 0x1F);
+                    self.regs[i.rd as usize] = res;
                 }
                 self.pc += 4;
             }
             Instruction::Srli(i) => {
                 if i.rd != 0 {
-                    self.regs[i.rd as usize] = self.regs[i.rs1 as usize] >> (i.imm as u64 & 0x1F);
+                    self.regs[i.rd as usize] = self.regs[i.rs1 as usize] >> (i.imm as u64 & 0x3F);
                 }
                 self.pc += 4;
             }
