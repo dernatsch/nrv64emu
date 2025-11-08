@@ -481,7 +481,7 @@ impl Cpu {
             }
             Instruction::Sll(r) => {
                 let opa = self.regs[r.rs1 as usize];
-                let opb = self.regs[r.rs2 as usize] & 0x1F;
+                let opb = self.regs[r.rs2 as usize] & 0x3F;
                 self.regs[r.rd as usize] = opa << opb;
                 self.pc += 4;
             }
