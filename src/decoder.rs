@@ -173,6 +173,9 @@ pub enum Instruction {
     Slliw(IType),
     Srliw(IType),
     Addw(RType),
+    Mulw(RType),
+    Subw(RType),
+    Sllw(RType),
 
     // CSR
     Csrrw(IType),
@@ -225,6 +228,8 @@ pub enum Instruction {
 
     // A
     Amoswapw(RType),
+    Amoaddw(RType),
+    Amoswapd(RType),
 
     Fence,
 
@@ -302,6 +307,8 @@ impl Instruction {
                 
                 match (rt.funct3, rt.funct7 >> 2) {
                     (2, 1) => Instruction::Amoswapw(rt),
+                    (2, 0) => Instruction::Amoaddw(rt),
+                    (3, 1) => Instruction::Amoswapd(rt),
                     _ => unimplemented!("{:#010X} {:X?}", instruction, rt),
                 }
             }
@@ -335,6 +342,9 @@ impl Instruction {
                 let rt = RType::from(instruction);
                 match (rt.funct3, rt.funct7) {
                     (0x0, 0x00) => Instruction::Addw(rt),
+                    (0x0, 0x01) => Instruction::Mulw(rt),
+                    (0x0, 0x20) => Instruction::Subw(rt),
+                    (0x1, 0x00) => Instruction::Sllw(rt),
                     _ => unimplemented!("{:#010X} {:X?}", instruction, rt),
                 }
             }
